@@ -566,8 +566,7 @@ entirely via OIDC (`id-token: write` permission), requiring no stored secret.
 ### 9.2 Recommended Secret Strategy
 
 Configure `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` as
-**organisation-level secrets** available to all repos in `steamwiz`. This mirrors
-the GitLab group-variable approach.
+**organisation-level secrets** available to all repos in `steamwiz`.
 
 `GH_TOKEN` can use the default `GITHUB_TOKEN` if repo settings permit; otherwise
 use an org-level PAT.
