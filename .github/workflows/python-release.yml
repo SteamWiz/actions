@@ -1,0 +1,150 @@
+# Reusable workflow: Version bump, tag, push and GitHub Release via
+# python-semantic-release.
+# Callers: uses: steamwiz/actions/.github/workflows/python-release.yml@v1
+#
+# This is the only workflow in the library that writes to the repository, so
+# only the caller's release workflow needs to grant write permissions.
+# Run it after python-ci.yml (and optionally python-style.yml) has passed:
+#
+#   release:
+#     needs: [tests]
+#     uses: steamwiz/actions/.github/workflows/python-release.yml@v1
+#
+# The job refuses to run anywhere but `main`, so dispatching the caller from a
+# feature branch is a safe dry run of everything that precedes the release.
+#
+# Building and publishing to PyPI stay in the caller: PyPI trusted publishing
+# is registered against the caller's workflow filename.
+#
+# See SPEC.md §4.9 for full documentation.
+
+name: Python Release
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        description: "Python version passed to actions/setup-python"
+        type: string
+        default: '3.13'
+      release-level:
+        description: >
+          If set to patch, minor, or major, forces python-semantic-release to
+          release at that level regardless of commit messages. Empty string or
+          'auto' means normal conventional-commit-driven release.
+        type: string
+        default: ''
+
+    secrets:
+      APP_ID:
+        description: >
+          GitHub App ID for steamwiz-releasebot. Used to generate a short-lived
+          installation token for python-semantic-release.
+        required: true
+      APP_PRIVATE_KEY:
+        description: "GitHub App private key (PEM) for steamwiz-releasebot."
+        required: true
+
+    outputs:
+      version:
+        description: "The version string released (e.g. 1.4.2), or empty if no release"
+        value: ${{ jobs.release.outputs.version }}
+      released:
+        description: "'true' if a new version was released, 'false' otherwise"
+        value: ${{ jobs.release.outputs.released }}
+      tag:
+        description: "The git tag created (e.g. v1.4.2), or empty if no release"
+        value: ${{ jobs.release.outputs.tag }}
+
+# Deny all permissions by default; jobs grant only what they need.
+permissions: {}
+
+jobs:
+
+  release:
+    name: Release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      version: ${{ steps.set-outputs.outputs.version }}
+      released: ${{ steps.set-outputs.outputs.released }}
+      tag: ${{ steps.set-outputs.outputs.tag }}
+    steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install python-semantic-release
+        run: pip install "python-semantic-release==10.*"
+
+      - name: Configure git user
+        run: |
+          git config user.name "steamwiz-releasebot[bot]"
+          git config user.email "steamwiz-releasebot[bot]@users.noreply.github.com"
+
+      - name: Run semantic-release
+        id: psr
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          RELEASE_LEVEL: ${{ inputs.release-level }}
+        run: |
+          case "$RELEASE_LEVEL" in
+            auto) RELEASE_LEVEL="" ;;
+            ""|patch|minor|major) ;;
+            *) echo "::error::release-level must be auto, patch, minor or major (got '$RELEASE_LEVEL')"; exit 1 ;;
+          esac
+          FORCE_FLAG=""
+          if [ -n "$RELEASE_LEVEL" ]; then
+            FORCE_FLAG="--$RELEASE_LEVEL"
+          fi
+          # PSR v10 writes released=false at init then released=true after tagging,
+          # both into $GITHUB_OUTPUT. GitHub Actions uses the FIRST value for
+          # duplicate keys, so released stays 'false'. Work around this by having
+          # PSR write to a sidecar file, then extracting the last (authoritative)
+          # value of each key and writing it to GITHUB_ENV for the next step.
+          SIDECAR=$(mktemp)
+          GITHUB_OUTPUT="$SIDECAR" semantic-release version $FORCE_FLAG
+          echo "--- PSR sidecar (raw) ---"
+          grep -E "^(released|version|tag)=" "$SIDECAR" || echo "(none)"
+          PSR_RELEASED=$(grep "^released=" "$SIDECAR" | tail -1 | cut -d= -f2)
+          PSR_VERSION=$(grep  "^version="  "$SIDECAR" | tail -1 | cut -d= -f2)
+          PSR_TAG=$(grep      "^tag="      "$SIDECAR" | tail -1 | cut -d= -f2)
+          PSR_RELEASED=${PSR_RELEASED:-false}
+          echo "PSR_RELEASED=$PSR_RELEASED" >> "$GITHUB_ENV"
+          echo "PSR_VERSION=$PSR_VERSION"   >> "$GITHUB_ENV"
+          echo "PSR_TAG=$PSR_TAG"           >> "$GITHUB_ENV"
+          echo "Extracted: released=$PSR_RELEASED  version=$PSR_VERSION  tag=$PSR_TAG"
+          rm -f "$SIDECAR"
+
+      - name: Set job outputs
+        id: set-outputs
+        run: |
+          echo "released=$PSR_RELEASED" >> "$GITHUB_OUTPUT"
+          echo "version=$PSR_VERSION"   >> "$GITHUB_OUTPUT"
+          echo "tag=$PSR_TAG"           >> "$GITHUB_OUTPUT"
+          echo "Outputs set: released=$PSR_RELEASED  version=$PSR_VERSION  tag=$PSR_TAG"
+          {
+            if [ "$PSR_RELEASED" = "true" ]; then
+              echo "### Released $PSR_TAG"
+            else
+              echo "### No release"
+              echo "No releasable commits (fix:/feat:) since the last tag."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

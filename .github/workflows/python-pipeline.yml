@@ -1,3 +1,10 @@
+# DEPRECATED: use python-ci.yml (+ python-style.yml) for pull requests and
+# python-release.yml for releases. This monolithic workflow bundles the
+# release job (write permissions) with the test jobs, which forces every
+# caller - including pull-request runs - to grant write access, and always
+# shows Release/Style as skipped. It is kept unchanged for existing callers
+# and will be removed in v2.
+#
 # Reusable workflow: Full CI/CD pipeline for a Python PyPI package.
 # Callers: uses: steamwiz/actions/.github/workflows/python-pipeline.yml@v1
 #

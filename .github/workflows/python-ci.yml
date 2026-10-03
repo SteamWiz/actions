@@ -1,0 +1,145 @@
+# Reusable workflow: Test + coverage gate for a Python (Poetry) project.
+# Callers: uses: steamwiz/actions/.github/workflows/python-ci.yml@v1
+#
+# Read-only by design: this workflow never needs write access to the
+# repository, so a pull-request caller can run with `contents: read` only.
+# Release lives in python-release.yml; style in python-style.yml.
+#
+# Concurrency is owned by the caller (see README.md for the recommended block).
+#
+# See SPEC.md §4.9 for full documentation.
+
+name: Python CI
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        description: "Python version passed to actions/setup-python"
+        type: string
+        default: '3.13'
+      source-dir:
+        description: >
+          Python source package directory measured for coverage. Defaults to
+          the repo name with hyphens replaced by underscores.
+        type: string
+        default: ''
+      coverage-min:
+        description: "Minimum coverage percentage; the Coverage job fails if below this"
+        type: number
+        default: 80
+
+# Deny all permissions by default; jobs grant only what they need.
+permissions: {}
+
+jobs:
+
+  # ---------------------------------------------------------------------------
+  # test: Install dependencies, run the suite under coverage, publish results.
+  # ---------------------------------------------------------------------------
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      checks: write   # EnricoMi/publish-unit-test-result-action creates a check run
+    env:
+      SOURCE_DIR_INPUT: ${{ inputs.source-dir }}
+      REPO_NAME: ${{ github.event.repository.name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install Poetry
+        run: pip install "poetry==2.*"
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: ${{ runner.os }}-poetry-${{ inputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install project dependencies
+        run: poetry install --no-root
+
+      - name: Resolve source directory
+        run: echo "SOURCE_DIR=${SOURCE_DIR_INPUT:-${REPO_NAME//-/_}}" >> "$GITHUB_ENV"
+
+      - name: Run pytest with coverage
+        run: >
+          poetry run python -m coverage run
+          --source="$SOURCE_DIR"
+          -m pytest test/ -s
+          --junitxml=junit/test-results.xml
+
+      # upload-artifact skips dotfiles by default, so the data file is renamed.
+      - name: Rename coverage file for upload
+        if: always()
+        run: mv .coverage coverage.db
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.db
+          retention-days: 7
+
+      - name: Upload JUnit results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit
+          path: junit/
+          retention-days: 7
+
+      - name: Publish test results
+        if: always()
+        uses: EnricoMi/publish-unit-test-result-action@d0a4676d0e0b938bc201470d88276b7c74c712b3   # v2.24.0
+        with:
+          files: junit/test-results.xml
+          comment_mode: off
+
+  # ---------------------------------------------------------------------------
+  # coverage: Enforce the minimum threshold and show the report in the run summary.
+  # ---------------------------------------------------------------------------
+  coverage:
+    name: Coverage
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      COVERAGE_MIN: ${{ inputs.coverage-min }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install coverage
+        run: pip install coverage
+
+      - name: Download coverage artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage
+
+      - name: Add coverage report to run summary
+        run: |
+          {
+            echo "### Coverage (minimum ${COVERAGE_MIN}%)"
+            python -m coverage report -m --data-file=coverage.db --format=markdown
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce coverage threshold
+        run: python -m coverage report -m --data-file=coverage.db --fail-under "$COVERAGE_MIN"
