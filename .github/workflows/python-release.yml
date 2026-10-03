@@ -30,8 +30,8 @@ on:
       release-level:
         description: >
           If set to patch, minor, or major, forces python-semantic-release to
-          release at that level regardless of commit messages. Empty string
-          means normal conventional-commit-driven release.
+          release at that level regardless of commit messages. Empty string or
+          'auto' means normal conventional-commit-driven release.
         type: string
         default: ''
 
@@ -106,8 +106,9 @@ jobs:
           RELEASE_LEVEL: ${{ inputs.release-level }}
         run: |
           case "$RELEASE_LEVEL" in
+            auto) RELEASE_LEVEL="" ;;
             ""|patch|minor|major) ;;
-            *) echo "::error::release-level must be empty, patch, minor or major (got '$RELEASE_LEVEL')"; exit 1 ;;
+            *) echo "::error::release-level must be auto, patch, minor or major (got '$RELEASE_LEVEL')"; exit 1 ;;
           esac
           FORCE_FLAG=""
           if [ -n "$RELEASE_LEVEL" ]; then

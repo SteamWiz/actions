@@ -56,10 +56,10 @@ on:
   workflow_dispatch:
     inputs:
       release-level:
-        description: "Force a release at this level, or leave empty for commit-driven"
+        description: "Release level: auto = decide from conventional commits"
         type: choice
-        options: ['', patch, minor, major]
-        default: ''
+        options: [auto, patch, minor, major]
+        default: auto
 
 permissions:
   contents: read
@@ -175,7 +175,7 @@ example above.
 | Input | Type | Default | Description |
 |---|---|---|---|
 | `python-version` | string | `'3.13'` | Python version for `actions/setup-python` |
-| `release-level` | string | `''` | `patch`, `minor` or `major` to force a level; anything else non-empty is rejected |
+| `release-level` | string | `''` | `patch`, `minor` or `major` to force a level; empty or `auto` lets conventional commits decide; anything else is rejected |
 
 | Secret | Required | Description |
 |---|---|---|
