@@ -194,7 +194,7 @@ All jobs run on `ubuntu-latest` unless otherwise noted.
   4. Compute effective source dir: if `inputs.source-dir` is non-empty use it directly; otherwise derive it from `${{ github.event.repository.name }}` by replacing hyphens with underscores using a `run` step that writes `SOURCE_DIR` to `$GITHUB_ENV`.
   5. `poetry run python -m coverage run --source=$SOURCE_DIR -m pytest test/ -s --junitxml=junit/test-results.xml`
 - **Artifacts uploaded**: `.coverage`, `junit/` (JUnit XML); retained 7 days
-- **Test results**: Upload JUnit XML with `actions/upload-artifact@v4`; report in PR checks via `EnricoMi/publish-unit-test-result-action@v2` (summary only, not blocking)
+- **Test results**: Upload JUnit XML with `actions/upload-artifact@v4`; report in PR checks via `EnricoMi/publish-unit-test-result-action@v2` (check-run summary only, not blocking; `comment_mode: off` so no PR comment is posted, as the job has no `pull-requests: write`)
 
 #### `coverage`
 
