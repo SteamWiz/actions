@@ -7,13 +7,198 @@ Any Steamwiz project (or any public GitHub user) can call these workflows with a
 
 | Workflow | Purpose |
 |---|---|
-| [`python-pipeline.yml`](#python-pipelineyml) | Full CI/CD pipeline for a Python PyPI package |
+| [`python-ci.yml`](#python-ciyml) | Test + coverage gate for a Python (Poetry) project. Read-only. |
+| [`python-style.yml`](#python-styleyml) | pycodestyle check. Optional: call it only if you want it. |
+| [`python-release.yml`](#python-releaseyml) | Version bump, tag and GitHub Release via python-semantic-release. The only workflow that writes. |
+| [`python-pipeline.yml`](#python-pipelineyml-deprecated) | **Deprecated** monolith of the three above. Removed in v2. |
 | [`mdbook-build.yml`](#mdbook-buildyml) | Build an mdBook documentation site |
 | [`cloudflare-deploy.yml`](#cloudflare-deployyml) | Deploy a static site to Cloudflare Pages |
 
 ---
 
-## `python-pipeline.yml`
+## Recommended layout for a Python package
+
+Split the checks that run on every pull request from the release, so that
+pull requests run with a read-only token and never show permanently "skipped"
+jobs. Two caller workflows per project:
+
+```yaml
+# .github/workflows/pr.yml - runs on every pull request, read-only
+name: CI
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  checks: write
+
+# One run per PR; a new push cancels the superseded run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    uses: steamwiz/actions/.github/workflows/python-ci.yml@v1
+    with:
+      python-version: '3.13'
+      source-dir: mypackage
+      coverage-min: 95
+```
+
+```yaml
+# .github/workflows/ci.yml - manual release, run from `main`
+# The file name matters: PyPI trusted publishing is registered against it.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release-level:
+        description: "Force a release at this level, or leave empty for commit-driven"
+        type: choice
+        options: ['', patch, minor, major]
+        default: ''
+
+permissions:
+  contents: read
+
+# Never cancel a release part-way through.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  test:
+    uses: steamwiz/actions/.github/workflows/python-ci.yml@v1
+    permissions:
+      contents: read
+      checks: write
+    with:
+      python-version: '3.13'
+      source-dir: mypackage
+      coverage-min: 95
+
+  release:
+    needs: test
+    uses: steamwiz/actions/.github/workflows/python-release.yml@v1
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    with:
+      python-version: '3.13'
+      release-level: ${{ inputs.release-level }}
+    secrets:
+      APP_ID: ${{ secrets.APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+
+  build:
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install "poetry==2.*"
+      - run: poetry install --no-root
+      - run: poetry build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 30
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+```
+
+To add a style check, add a job to `pr.yml` that calls `python-style.yml`.
+Projects that do not want one simply omit it.
+
+---
+
+## `python-ci.yml`
+
+Runs the test suite under coverage (job **Test**) and enforces the coverage
+threshold (job **Coverage**). Needs only `contents: read` and `checks: write`.
+The coverage table is added to the run summary.
+
+| Input | Type | Default | Description |
+|---|---|---|---|
+| `python-version` | string | `'3.13'` | Python version for `actions/setup-python` |
+| `source-dir` | string | `''` | Package measured for coverage. Defaults to the repo name with hyphens to underscores. |
+| `coverage-min` | number | `80` | Minimum coverage %; the Coverage job fails if below |
+
+No secrets, no outputs.
+
+---
+
+## `python-style.yml`
+
+Runs pycodestyle (job **Style**). Only call it if you want the check.
+
+| Input | Type | Default | Description |
+|---|---|---|---|
+| `python-version` | string | `'3.13'` | Python version for `actions/setup-python` |
+| `source-dir` | string | `''` | Package to check. Defaults to the repo name with hyphens to underscores. |
+| `style-dirs` | string | `'test'` | Space-separated extra directories to check (missing ones are skipped) |
+
+---
+
+## `python-release.yml`
+
+Runs python-semantic-release: bumps the version, tags, pushes and creates the
+GitHub Release. Refuses to run on any ref other than `main`, so dispatching the
+caller from a branch is a safe dry run. Needs the permissions shown in the
+example above.
+
+| Input | Type | Default | Description |
+|---|---|---|---|
+| `python-version` | string | `'3.13'` | Python version for `actions/setup-python` |
+| `release-level` | string | `''` | `patch`, `minor` or `major` to force a level; anything else non-empty is rejected |
+
+| Secret | Required | Description |
+|---|---|---|
+| `APP_ID` / `APP_PRIVATE_KEY` | Yes | steamwiz-releasebot GitHub App credentials |
+
+| Output | Description |
+|---|---|
+| `version` | Released version (e.g. `1.4.2`), or empty |
+| `released` | `'true'` if a release occurred, `'false'` otherwise |
+| `tag` | Git tag created (e.g. `v1.4.2`), or empty |
+
+The `pyproject.toml` configuration it expects is described under
+[`python-pipeline.yml`](#pyprojecttoml-configuration-required) below and is unchanged.
+
+---
+
+## `python-pipeline.yml` (deprecated)
+
+> Use `python-ci.yml`, `python-style.yml` and `python-release.yml` instead.
+> This workflow bundles the release job with the test jobs, so every caller,
+> including pull-request runs, must grant write permissions, and Release/Style
+> show up as skipped on every PR. It is unchanged and will be removed in v2.
+
 
 Full CI/CD pipeline: install → test → coverage → style → release → build.
 
@@ -202,32 +387,11 @@ deploy-docs:
 
 ## PyPI Publish Pattern
 
-PyPI's OIDC trusted publisher issues tokens per-job. Because the publish step must
-live in the **project's own repository** (not in `steamwiz/actions`), the shared
-library does not include a publish workflow.
-
-Each project creates `.github/workflows/publish.yml`:
-
-```yaml
-name: Publish to PyPI
-
-on:
-  workflow_call:
-
-jobs:
-  pypi-publish:
-    runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist/
-      - uses: pypa/gh-action-pypi-publish@release/v1
-```
+PyPI's OIDC trusted publisher issues tokens per job, and PyPI matches the
+**filename of the top-level (caller) workflow**, not of any reusable workflow it
+calls. The shared library therefore does not include a publish workflow: the
+`build` and `publish` jobs live in the project's own release workflow
+(`.github/workflows/ci.yml`; see the layout example above).
 
 Register a GitHub Actions trusted publisher on PyPI with:
 
@@ -235,10 +399,13 @@ Register a GitHub Actions trusted publisher on PyPI with:
 |---|---|
 | Owner | `steamwiz` |
 | Repository | your project repo (e.g. `busy`) |
-| Workflow filename | `publish.yml` |
+| Workflow filename | `ci.yml` (the workflow that contains the `publish` job) |
 | Environment | `pypi` |
 
 Create a GitHub Environment named `pypi` in the project repo settings.
+
+> Renaming or moving the workflow that contains `publish` breaks publishing
+> until the trusted publisher is re-registered on PyPI.
 
 ---
 

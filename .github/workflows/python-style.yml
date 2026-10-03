@@ -1,0 +1,76 @@
+# Reusable workflow: pycodestyle for a Python (Poetry) project.
+# Callers: uses: steamwiz/actions/.github/workflows/python-style.yml@v1
+#
+# Optional by composition: a project that does not want a style check simply
+# does not call this workflow, so no permanently "skipped" job shows up in the
+# checks list.
+#
+# See SPEC.md §4.9 for full documentation.
+
+name: Python Style
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        description: "Python version passed to actions/setup-python"
+        type: string
+        default: '3.13'
+      source-dir:
+        description: >
+          Python source package directory to check. Defaults to the repo name
+          with hyphens replaced by underscores.
+        type: string
+        default: ''
+      style-dirs:
+        description: >
+          Space-separated list of directories (beyond source-dir) to check.
+          Directories that do not exist are skipped.
+        type: string
+        default: 'test'
+
+# Deny all permissions by default; jobs grant only what they need.
+permissions: {}
+
+jobs:
+
+  style:
+    name: Style
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      SOURCE_DIR_INPUT: ${{ inputs.source-dir }}
+      REPO_NAME: ${{ github.event.repository.name }}
+      STYLE_DIRS: ${{ inputs.style-dirs }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install Poetry
+        run: pip install "poetry==2.*"
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry/virtualenvs
+          key: ${{ runner.os }}-poetry-${{ inputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install project dependencies
+        run: poetry install --no-root
+
+      - name: Check style (source dir)
+        run: poetry run pycodestyle "${SOURCE_DIR_INPUT:-${REPO_NAME//-/_}}"
+
+      - name: Check style (extra dirs)
+        run: |
+          for dir in $STYLE_DIRS; do
+            if [ -d "$dir" ]; then
+              poetry run pycodestyle "$dir"
+            fi
+          done

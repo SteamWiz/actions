@@ -21,7 +21,10 @@ that any Steamwiz project can call with a single `uses:` line.
 actions/
 ├── .github/
 │   └── workflows/
-│       ├── python-pipeline.yml        # Full build/test/release pipeline (workflow_call)
+│       ├── python-ci.yml              # Test + coverage gate, read-only (workflow_call)
+│       ├── python-style.yml           # pycodestyle, optional (workflow_call)
+│       ├── python-release.yml         # python-semantic-release, the only writer (workflow_call)
+│       ├── python-pipeline.yml        # DEPRECATED monolith of the three above (workflow_call)
 │       ├── mdbook-build.yml           # Build mdBook documentation (workflow_call)
 │       └── cloudflare-deploy.yml      # Deploy static site to Cloudflare Pages (workflow_call)
 ├── README.md
@@ -331,6 +334,50 @@ jobs:
     secrets: inherit
 ```
 
+### 4.9 Split Workflows (recommended): `python-ci.yml`, `python-style.yml`, `python-release.yml`
+
+`python-pipeline.yml` is **deprecated** (removed in v2). Its problems:
+
+- The `release` job needs `contents: write`. GitHub validates a caller's
+  `permissions` against every job in the called workflow, so even a pull-request
+  run had to grant write access, to code the pull request itself can modify.
+- `Release` and `Style` appear as "skipped" on every pull request, and callers
+  that disable style or run on a non-`main` ref see skipped `Build`/`Publish` too.
+- `cancel-in-progress: true` could cancel a release after the tag was pushed but
+  before the package was published.
+
+The replacement is three single-purpose reusable workflows. Optionality comes
+from the caller choosing which to call, not from `do-*` inputs, so nothing
+renders as skipped.
+
+| Workflow | Jobs | Permissions | Inputs |
+|---|---|---|---|
+| `python-ci.yml` | `Test`, `Coverage` | `contents: read`, `checks: write` | `python-version`, `source-dir`, `coverage-min` |
+| `python-style.yml` | `Style` | `contents: read` | `python-version`, `source-dir`, `style-dirs` |
+| `python-release.yml` | `Release` (only on `main`) | `contents: write`, `issues: write`, `pull-requests: write` | `python-version`, `release-level`; secrets `APP_ID`, `APP_PRIVATE_KEY`; outputs `version`, `released`, `tag` |
+
+Conventions shared by all three:
+
+- Top-level `permissions: {}`; every job grants only what it needs.
+- User-controlled values reach shell steps through `env:`, never by direct
+  `${{ }}` interpolation into `run:`.
+- Every job sets `timeout-minutes`.
+- Checkouts that do not push use `persist-credentials: false`.
+- Concurrency is owned by the **caller**: PR workflows use
+  `cancel-in-progress: true`; release workflows use `cancel-in-progress: false`.
+- Coverage is reported in the run summary (`$GITHUB_STEP_SUMMARY`).
+
+**Caller layout.** Each project has two workflows:
+
+- `pr.yml` (`on: pull_request`, `permissions: contents: read, checks: write`)
+  calls `python-ci.yml` (and optionally `python-style.yml` and `mdbook-build.yml`).
+- `ci.yml` (`on: workflow_dispatch`) calls `python-ci.yml` then
+  `python-release.yml`, followed by project-side `build` and `publish` jobs.
+
+The release workflow keeps the filename `ci.yml` because PyPI trusted publishing
+is registered against the caller's filename (see §7). `build` and `publish`
+stay in the caller for the same reason. A full example is in `README.md`.
+
 ---
 
 ## 5. Reusable Workflow: `mdbook-build.yml`
@@ -516,6 +563,12 @@ All Steamwiz projects adopt the
 A release is triggered automatically on every push to `main` **if and only if** the
 commit history since the last tag contains at least one `fix:` or `feat:` commit.
 Pushes containing only `chore:`/`docs:`/etc. commits produce no release.
+
+> **Current deployment:** the caller workflows in the Python projects trigger on
+> `workflow_dispatch` only (`push` to `main` is ignored), so releases are cut
+> manually; commit-driven versioning applies when the release workflow is
+> dispatched with an empty `release-level`. To release automatically on every
+> merge to `main`, add `push: branches: [main]` to the release caller's `on:`.
 
 ### 8.3 Manual Release Override
 
