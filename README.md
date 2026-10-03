@@ -24,7 +24,7 @@ jobs. Two caller workflows per project:
 
 ```yaml
 # .github/workflows/pr.yml - runs on every pull request, read-only
-name: CI
+name: PR Checks
 
 on:
   pull_request:
