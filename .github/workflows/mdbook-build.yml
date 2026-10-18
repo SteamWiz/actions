@@ -47,7 +47,7 @@ jobs:
     outputs:
       artifact-name: ${{ inputs.artifact-name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install mdBook
         uses: peaceiris/actions-mdbook@ee69d230fe19748b7abf22df32acaa93833fad08   # v2.0.0
@@ -58,7 +58,7 @@ jobs:
         run: mdbook build --dest-dir "${{ inputs.output-dir }}"
 
       - name: Upload site artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.artifact-name }}
           path: ${{ inputs.output-dir }}/

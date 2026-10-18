@@ -1,0 +1,7 @@
+# Test fixture only. mdbook-build.yml runs `mdbook build` at the repository
+# root, so the self-test (.github/workflows/test-shared-workflows.yml) needs a
+# book.toml here. The book's sources live under test/fixtures/book.
+
+[book]
+title = "steamwiz/actions self-test fixture"
+src = "test/fixtures/book"

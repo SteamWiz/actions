@@ -48,11 +48,11 @@ jobs:
       SOURCE_DIR_INPUT: ${{ inputs.source-dir }}
       REPO_NAME: ${{ github.event.repository.name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ inputs.python-version }}
 
@@ -84,7 +84,7 @@ jobs:
 
       - name: Upload coverage artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: coverage.db
@@ -92,7 +92,7 @@ jobs:
 
       - name: Upload JUnit results artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: junit
           path: junit/
@@ -118,11 +118,11 @@ jobs:
     env:
       COVERAGE_MIN: ${{ inputs.coverage-min }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ inputs.python-version }}
 
@@ -130,7 +130,7 @@ jobs:
         run: pip install coverage
 
       - name: Download coverage artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: coverage
 
