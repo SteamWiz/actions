@@ -6,8 +6,9 @@
 #
 # Not covered here, because they need secrets and act on real systems:
 #   - python-release.yml (GitHub App token, pushes tags, only runs on main)
-#   - cloudflare-deploy.yml (Cloudflare credentials); its download step is
-#     mirrored by the `deploy-download` job below
+#   - cloudflare-deploy.yml (Cloudflare credentials); its download step, with
+#     default inputs, is mirrored by the `deploy-download` job below, which
+#     fails unless index.html lands in the directory the deploy step deploys
 #   - python-pipeline.yml (deprecated; its release job forces the caller to
 #     grant write permissions)
 
@@ -51,9 +52,10 @@ jobs:
       artifact-name: self-test-mdbook-site
       artifact-retention-days: 1
 
-  # Same download step as cloudflare-deploy.yml (by name only, into the
-  # workspace), without the deploy. Checks the artifact arrives and is
-  # extracted in place rather than into a <name>/ subdirectory.
+  # Same download step as cloudflare-deploy.yml with its default inputs
+  # (artifact extracted into `directory: html`), without the deploy. Fails
+  # unless index.html is at html/index.html, the path
+  # `wrangler pages deploy html` deploys.
   deploy-download:
     name: Download site artifact (as cloudflare-deploy)
     needs: mdbook-build
@@ -62,25 +64,19 @@ jobs:
     permissions:
       contents: read
     env:
-      ARTIFACT_NAME: ${{ needs.mdbook-build.outputs.artifact-name }}
+      DEPLOY_DIR: html
     steps:
       - name: Download site artifact
         uses: actions/download-artifact@v8
         with:
           name: ${{ needs.mdbook-build.outputs.artifact-name }}
+          path: ${{ env.DEPLOY_DIR }}
 
-      - name: Check extracted layout
+      - name: Check index.html is where the deploy step looks
         run: |
-          find . -maxdepth 2 -name '*.html' | sort
-          if [ -d "$ARTIFACT_NAME" ]; then
-            echo "::error::artifact was extracted into ./$ARTIFACT_NAME/"
+          find . -maxdepth 3 -name 'index.html' | sort
+          if [ ! -f "$DEPLOY_DIR/index.html" ]; then
+            echo "::error::$DEPLOY_DIR/index.html not found; cloudflare-deploy would deploy a directory without the site"
             exit 1
           fi
-          if [ -f html/index.html ]; then
-            echo "index.html is at html/index.html" >> "$GITHUB_STEP_SUMMARY"
-          elif [ -f index.html ]; then
-            echo "index.html is at the workspace root (artifact root = contents of html/)" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "::error::index.html not found in the downloaded artifact"
-            exit 1
-          fi
+          echo "index.html is at $DEPLOY_DIR/index.html" >> "$GITHUB_STEP_SUMMARY"

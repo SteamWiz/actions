@@ -293,7 +293,6 @@ jobs:
     uses: steamwiz/actions/.github/workflows/cloudflare-deploy.yml@v1
     with:
       cloudflare-project-name: my-project
-      directory: html
     secrets: inherit
 ```
 
@@ -361,7 +360,16 @@ Downloads a static site artifact and deploys it to Cloudflare Pages using
 |---|---|---|---|
 | `cloudflare-project-name` | string | — **(required)** | Cloudflare Pages project name |
 | `artifact-name` | string | `'mdbook-site'` | Artifact to download and deploy |
-| `directory` | string | `'html'` | Subdirectory within the artifact to deploy |
+| `directory` | string | `'html'` | Directory the artifact is downloaded into and deployed from |
+
+The artifact is extracted into `directory`, and `wrangler pages deploy`
+deploys that same directory, so the artifact's root becomes the site root.
+`mdbook-build.yml` uploads the *contents* of its `output-dir` (the artifact
+root holds `index.html`), so the defaults of both workflows work together
+whatever `output-dir` is; you don't need to set `directory`. Callers that
+pass `directory: .` get the previous behaviour (extract into, and deploy, the
+workspace root). `directory` is not a path inside the artifact: if your
+artifact keeps the site in a subfolder, upload that subfolder instead.
 
 ### Secrets
 
@@ -379,7 +387,6 @@ deploy-docs:
   uses: steamwiz/actions/.github/workflows/cloudflare-deploy.yml@v1
   with:
     cloudflare-project-name: my-project
-    directory: html
   secrets: inherit
 ```
 
