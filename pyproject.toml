@@ -1,0 +1,20 @@
+# Test fixture only; this repository is not a Python package.
+#
+# python-ci.yml and python-style.yml run `poetry install` and `pytest test/` at
+# the repository root, so the self-test
+# (.github/workflows/test-shared-workflows.yml) needs a Poetry project here.
+# The code under test is test/fixtures/sample_pkg.
+
+[tool.poetry]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.10"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
+coverage = "^7.0"
+pycodestyle = "^2.11"
+
+# Stops pytest searching parent directories for configuration.
+[tool.pytest.ini_options]

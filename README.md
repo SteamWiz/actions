@@ -101,17 +101,17 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.release.outputs.tag }}
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
       - run: pip install "poetry==2.*"
       - run: poetry install --no-root
       - run: poetry build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
@@ -125,7 +125,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
@@ -424,3 +424,18 @@ only on breaking changes to workflow inputs or job structure.
 
 All third-party actions are pinned to full-length commit SHAs. Dependabot keeps
 these current via weekly PRs. See `SPEC.md §12` for the full pinning table.
+
+The GitHub-owned actions run on Node 24, so self-hosted runners need Actions
+Runner 2.327.1 or later. GitHub-hosted runners already meet this.
+
+## Self-test
+
+[`test-shared-workflows.yml`](.github/workflows/test-shared-workflows.yml) runs
+on every pull request in this repository. It calls `python-ci.yml`,
+`python-style.yml` and `mdbook-build.yml` through local refs, so the workflows
+on the pull-request branch are the ones that run, and repeats the artifact
+download step of `cloudflare-deploy.yml`. The fixtures it uses are
+`pyproject.toml`, `poetry.lock`, `book.toml` and `test/`; this repository is not
+a Python package or a book itself. `python-release.yml`, the deploy itself and
+the deprecated `python-pipeline.yml` are not covered: they need secrets or write
+access.

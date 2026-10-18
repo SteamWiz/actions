@@ -26,7 +26,11 @@ actions/
 │       ├── python-release.yml         # python-semantic-release, the only writer (workflow_call)
 │       ├── python-pipeline.yml        # DEPRECATED monolith of the three above (workflow_call)
 │       ├── mdbook-build.yml           # Build mdBook documentation (workflow_call)
-│       └── cloudflare-deploy.yml      # Deploy static site to Cloudflare Pages (workflow_call)
+│       ├── cloudflare-deploy.yml      # Deploy static site to Cloudflare Pages (workflow_call)
+│       └── test-shared-workflows.yml  # Self-test of the workflows above (pull_request)
+├── test/                              # Self-test fixtures (sample package, test, book sources)
+├── pyproject.toml / poetry.lock       # Self-test fixture: Poetry project for python-ci/style
+├── book.toml                          # Self-test fixture: mdBook config for mdbook-build
 ├── README.md
 └── CHANGELOG.md
 ```
@@ -169,16 +173,16 @@ All jobs run on `ubuntu-latest` unless otherwise noted.
 
 - **Runner**: `ubuntu-latest`
 - **Steps**:
-  1. `actions/checkout@v4` with `fetch-depth: 0` (needed for semantic release to read commit history)
-  2. `actions/setup-python@v5` with the `python-version` input
+  1. `actions/checkout@v7` with `fetch-depth: 0` (needed for semantic release to read commit history)
+  2. `actions/setup-python@v7` with the `python-version` input
   3. `actions/cache@v4` keyed on `${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}`; cache path `.venv`
   4. `pip install poetry==2.*` (pinned to major version; Dependabot keeps this current)
   5. `poetry install --no-root` (`--no-root` avoids installing the package itself, which is not needed for running tests or lint)
 - **Outputs**: The `.venv` directory is uploaded as a workflow artifact named `venv` (archived). Subsequent jobs download it rather than re-installing.
 
 > **Note on venv artifact vs cache**: GitHub Actions does not share the filesystem
-> between jobs. The `.venv` is uploaded with `actions/upload-artifact@v4` and
-> each downstream job downloads it with `actions/download-artifact@v4`. The
+> between jobs. The `.venv` is uploaded with `actions/upload-artifact@v7` and
+> each downstream job downloads it with `actions/download-artifact@v8`. The
 > `actions/cache@v4` step in the `install` job serves a different, narrower
 > purpose: it speeds up the `pip install poetry && poetry install` step within
 > the `install` job itself on repeat runs (cache hit avoids a network install).
@@ -191,13 +195,13 @@ All jobs run on `ubuntu-latest` unless otherwise noted.
 - **Needs**: `install`
 - **Condition**: `inputs.do-pytest == true`
 - **Steps**:
-  1. `actions/checkout@v4`
-  2. `actions/setup-python@v5`
+  1. `actions/checkout@v7`
+  2. `actions/setup-python@v7`
   3. Download `venv` artifact
   4. Compute effective source dir: if `inputs.source-dir` is non-empty use it directly; otherwise derive it from `${{ github.event.repository.name }}` by replacing hyphens with underscores using a `run` step that writes `SOURCE_DIR` to `$GITHUB_ENV`.
   5. `poetry run python -m coverage run --source=$SOURCE_DIR -m pytest test/ -s --junitxml=junit/test-results.xml`
 - **Artifacts uploaded**: `.coverage`, `junit/` (JUnit XML); retained 7 days
-- **Test results**: Upload JUnit XML with `actions/upload-artifact@v4`; report in PR checks via `EnricoMi/publish-unit-test-result-action@v2` (check-run summary only, not blocking; `comment_mode: off` so no PR comment is posted, as the job has no `pull-requests: write`)
+- **Test results**: Upload JUnit XML with `actions/upload-artifact@v7`; report in PR checks via `EnricoMi/publish-unit-test-result-action@v2` (check-run summary only, not blocking; `comment_mode: off` so no PR comment is posted, as the job has no `pull-requests: write`)
 
 #### `coverage`
 
@@ -206,7 +210,7 @@ All jobs run on `ubuntu-latest` unless otherwise noted.
   (if `pytest` was skipped, there is no `.coverage` artifact to download, so
   `coverage` must also be skipped)
 - **Steps**:
-  1. `actions/setup-python@v5`
+  1. `actions/setup-python@v7`
   2. `pip install coverage`
   3. Download `.coverage` artifact
   4. `python -m coverage xml`
@@ -218,8 +222,8 @@ All jobs run on `ubuntu-latest` unless otherwise noted.
 - **Needs**: `install`
 - **Condition**: `inputs.do-style == true`
 - **Steps**:
-  1. `actions/checkout@v4`
-  2. `actions/setup-python@v5`
+  1. `actions/checkout@v7`
+  2. `actions/setup-python@v7`
   3. Download `venv` artifact
   4. Compute `SOURCE_DIR` using the same logic as the `pytest` job (check `inputs.source-dir`; fall back to repo-name-derived value via `$GITHUB_ENV`).
   5. `poetry run pycodestyle $SOURCE_DIR`
@@ -251,8 +255,8 @@ All jobs run on `ubuntu-latest` unless otherwise noted.
 > original spec).
 - **Permissions required**: `contents: write`, `issues: write`, `pull-requests: write`
 - **Steps**:
-  1. `actions/checkout@v4` with `fetch-depth: 0` and `token: ${{ secrets.GH_TOKEN }}`
-  2. `actions/setup-python@v5`
+  1. `actions/checkout@v7` with `fetch-depth: 0` and `token: ${{ secrets.GH_TOKEN }}`
+  2. `actions/setup-python@v7`
   3. `pip install python-semantic-release==10.*` (pinned to major version; Dependabot keeps this current)
   4. Configure git user (name: `github-actions[bot]`, email: `41898282+github-actions[bot]@users.noreply.github.com`)
   5. `semantic-release version` — reads conventional commits, bumps version in `pyproject.toml`, commits, tags, pushes, creates GitHub Release with changelog
@@ -287,8 +291,8 @@ All jobs run on `ubuntu-latest` unless otherwise noted.
 - **Needs**: `release`
 - **Condition**: `needs.release.outputs.released == 'true'`
 - **Steps**:
-  1. `actions/checkout@v4` with `ref: ${{ needs.release.outputs.tag }}` — checks out the tagged commit so the version in `pyproject.toml` is correct
-  2. `actions/setup-python@v5`
+  1. `actions/checkout@v7` with `ref: ${{ needs.release.outputs.tag }}` — checks out the tagged commit so the version in `pyproject.toml` is correct
+  2. `actions/setup-python@v7`
   3. Download `venv` artifact
   4. `poetry build`
   5. Upload `dist/` as artifact named `dist`, retained 30 days
@@ -420,10 +424,10 @@ None.
 - **Runner**: `ubuntu-latest`
 - **Condition**: Runs unconditionally (callers gate on branch if needed)
 - **Steps**:
-  1. `actions/checkout@v4`
+  1. `actions/checkout@v7`
   2. `peaceiris/actions-mdbook@v2` with `mdbook-version: ${{ inputs.mdbook-version }}`
   3. `mdbook build --dest-dir ${{ inputs.output-dir }}`
-  4. `actions/upload-artifact@v4` — artifact named `${{ inputs.artifact-name }}`; path `${{ inputs.output-dir }}/`
+  4. `actions/upload-artifact@v7` — artifact named `${{ inputs.artifact-name }}`; path `${{ inputs.output-dir }}/`
 
 ---
 
@@ -513,7 +517,7 @@ jobs:
     permissions:
       id-token: write   # mandatory for OIDC
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
@@ -665,11 +669,12 @@ Dependabot (§14) keeps these SHAs current.
 
 | Action | Pin | Notes |
 |---|---|---|
-| `actions/checkout` | `@v4` | GitHub-owned |
-| `actions/setup-python` | `@v5` | GitHub-owned |
-| `actions/cache` | `@v4` | GitHub-owned |
-| `actions/upload-artifact` | `@v4` | GitHub-owned |
-| `actions/download-artifact` | `@v4` | GitHub-owned |
+| `actions/checkout` | `@v7` | GitHub-owned; Node 24 |
+| `actions/setup-python` | `@v7` | GitHub-owned; Node 24 |
+| `actions/cache` | `@v4` | GitHub-owned; v6 available, not yet adopted |
+| `actions/upload-artifact` | `@v7` | GitHub-owned; Node 24 |
+| `actions/download-artifact` | `@v8` | GitHub-owned; Node 24; digest mismatch fails the step by default |
+| `actions/create-github-app-token` | `@v3` | GitHub-owned; Node 24; `app-id` input deprecated in favour of `client-id` (still accepted) |
 | `pypa/gh-action-pypi-publish` | `@release/v1` | PyPA-owned |
 | `peaceiris/actions-mdbook` | `@ee69d230fe19748b7abf22df32acaa93833fad08` | v2.0.0 |
 | `cloudflare/wrangler-action` | `@ebbaa1584979971c8614a24965b4405ff95890e0` | v4.0.0; replaces deprecated `cloudflare/pages-action` |
