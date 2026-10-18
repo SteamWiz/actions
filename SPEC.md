@@ -334,7 +334,6 @@ jobs:
     uses: steamwiz/actions/.github/workflows/cloudflare-deploy.yml@v1
     with:
       cloudflare-project-name: steamwiz-busy
-      directory: html
     secrets: inherit
 ```
 
@@ -427,7 +426,9 @@ None.
   1. `actions/checkout@v7`
   2. `peaceiris/actions-mdbook@v2` with `mdbook-version: ${{ inputs.mdbook-version }}`
   3. `mdbook build --dest-dir ${{ inputs.output-dir }}`
-  4. `actions/upload-artifact@v7` — artifact named `${{ inputs.artifact-name }}`; path `${{ inputs.output-dir }}/`
+  4. `actions/upload-artifact@v7` — artifact named `${{ inputs.artifact-name }}`; path `${{ inputs.output-dir }}/`.
+     For a single directory, `upload-artifact` stores the directory's *contents*, so the
+     artifact root holds `index.html` (there is no `${{ inputs.output-dir }}/` folder in it).
 
 ---
 
@@ -454,7 +455,7 @@ on:
 |---|---|---|---|
 | `cloudflare-project-name` | string | — **(required)** | Cloudflare Pages project name |
 | `artifact-name` | string | `'mdbook-site'` | Name of the artifact to download and deploy |
-| `directory` | string | `'html'` | Subdirectory within the artifact to deploy |
+| `directory` | string | `'html'` | Directory the artifact is downloaded into and deployed from (not a path inside the artifact) |
 
 ### 6.4 Secrets
 
@@ -477,7 +478,9 @@ None.
 - **Runner**: `ubuntu-latest`
 - **Permissions**: none beyond default
 - **Steps**:
-  1. Download artifact `${{ inputs.artifact-name }}`
+  1. `actions/download-artifact@v8` — artifact `${{ inputs.artifact-name }}`, extracted into
+     `path: ${{ inputs.directory }}`, so the artifact root (for `mdbook-build.yml`, the
+     directory holding `index.html`) is at `${{ inputs.directory }}`
   2. `cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0` (v4.0.0) with:
      - `apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}`
      - `accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}`

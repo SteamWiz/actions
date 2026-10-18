@@ -21,6 +21,24 @@ Releases are tagged as `v{major}.{minor}.{patch}` on the `main` branch.
   `create-github-app-token` v3 logs a deprecation warning for the `app-id`
   input, which is still accepted.
 
+### Fixed
+
+- `cloudflare-deploy.yml` now downloads the artifact into `directory`
+  (`download-artifact` `path: ${{ inputs.directory }}`), the same directory
+  `wrangler pages deploy` deploys. Before, the artifact was extracted into the
+  workspace root while the default `directory: html` pointed at a folder that
+  did not exist, so `mdbook-build.yml` followed by `cloudflare-deploy.yml`
+  with default inputs could not deploy. Callers passing `directory: .` or
+  `directory: html` need no change. `directory` is no longer a subfolder
+  inside the artifact: a caller whose custom artifact keeps the site in a
+  subfolder and passes that subfolder's name would now deploy
+  `<name>/` containing `<name>/`, and should upload the subfolder itself
+  instead. README and SPEC examples no longer pass `directory: html` (it is
+  the default).
+- `test-shared-workflows.yml` `deploy-download` job now downloads exactly as
+  `cloudflare-deploy.yml` does with default inputs and fails unless
+  `html/index.html` exists, instead of accepting either layout.
+
 ### Added
 
 - `test-shared-workflows.yml` self-test: runs `python-ci.yml`,

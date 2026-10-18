@@ -21,7 +21,7 @@ on:
         type: string
         default: 'mdbook-site'
       directory:
-        description: "Subdirectory within the artifact to deploy"
+        description: "Directory the artifact is downloaded into and deployed from"
         type: string
         default: 'html'
 
@@ -47,10 +47,13 @@ jobs:
     permissions:
       contents: read
     steps:
+      # Extract into inputs.directory, so the deploy step below finds the
+      # artifact's root (e.g. mdbook-build's index.html) at that path.
       - name: Download site artifact
         uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.artifact-name }}
+          path: ${{ inputs.directory }}
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0   # v4.0.0
